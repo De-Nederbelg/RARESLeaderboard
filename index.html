@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rares Leaderboard (Auth)</title>
+  <style>
+    :root{--bg:#f6f6f7;--card:#fff;--border:#e6e6eb;--text:#111;--muted:#6b7280;--accent:#111}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{position:sticky;top:0;background:rgba(255,255,255,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+    .container{max-width:960px;margin:0 auto;padding:16px}
+    .tabs{display:inline-flex;background:#f3f4f6;border:1px solid var(--border);border-radius:12px;padding:4px}
+    .tab{border:none;background:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .tab.is-active{background:#fff;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+    .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#fff}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .card.pad{padding:16px}
+    .title{font-weight:800;font-size:22px}
+    .muted{color:var(--muted)}
+    .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff;border-color:#000}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+    thead{background:#f8f8fb}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+    .modal > .dialog{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.15);padding:16px;max-width:380px;width:100%}
+    .top3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .top3 .card{padding:16px}
+    .top3 .rank{font-size:12px;color:var(--muted)}
+    .top3 .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .top3 .score{font-weight:900;font-size:28px}
+    footer{font-size:12px}
+    @media (max-width:760px){.grid,.top3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="container" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="title">🏆 Rares Leaderboard</div>
+      <span class="pill">Firestore + Auth</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="tabs" id="tabs">
+        <button class="tab is-active" data-board="individuen">Individuen</button>
+        <button class="tab" data-board="regimenten">Regimenten</button>
+      </div>
+      <span class="pill" id="adminPill" style="display:none;background:#ecfdf5;border-color:#d1fae5">Admin</span>
+      <button class="btn" id="loginBtn">Inloggen</button>
+      <button class="btn" id="logoutBtn" style="display:none">Uitloggen</button>
+    </div>
+  </div>
+</header>
+
+<main class="container" style="padding-top:18px">
+  <!-- Top 3 -->
+  <section class="top3" id="top3"></section>
+
+  <!-- Admin form -->
+  <section class="card pad" id="adminForm" style="display:none;margin-top:12px">
+    <h2 style="margin:0 0 10px 0">Rares toevoegen</h2>
+    <form id="form">
+      <div class="grid">
+        <div>
+          <label class="muted">Doel (naam van individu of regiment)</label>
+          <input id="nameInput" placeholder="Naam (optioneel bij Individuen)" />
+        </div>
+        <div>
+          <label class="muted">Aantal rares</label>
+          <input id="amountInput" type="number" min="1" step="1" placeholder="bv. 5" required />
+        </div>
+        <div>
+          <label class="muted">Donateur (wie doneerde?)</label>
+          <input id="giverInput" placeholder="Naam donateur" />
+        </div>
+        <div>
+          <label class="muted">Gestort bij (waar?)</label>
+          <input id="whereInput" placeholder="bv. opslag A / kluis B" />
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+        <button class="btn primary" id="saveBtn" type="submit">Toevoegen</button>
+        <span class="muted" id="msg"></span>
+      </div>
+    </form>
+    <p class="muted" style="margin-top:8px">Bij <strong>Individuen</strong> telt de <strong>donateur</strong> op het leaderboard. Bij <strong>Regimenten</strong> telt de <strong>doelnaam</strong>.</p>
+  </section>
+
+  <!-- Tabel -->
+  <section class="card" style="margin-top:12px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)">
+      <h3 style="margin:0">Leaderboard – <span id="boardLabel">Individuen</span></h3>
+      <span class="muted" id="countLabel"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th id="nameHeader">Donateur</th>
+            <th>Rares</th>
+            <th>Laatst bijgewerkt</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Historiek -->
+  <section class="card" style="margin-top:12px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)">
+      <h3 style="margin:0">Laatste transacties</h3>
+      <span class="muted" id="logCount"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Tijd</th>
+            <th>Board</th>
+            <th>Doel</th>
+            <th>+Rares</th>
+            <th>Donateur</th>
+            <th>Gestort bij</th>
+          </tr>
+        </thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer style="margin:16px 0 32px" class="muted">
+    Iedereen kan kijken; <strong>alleen ingelogde admins</strong> kunnen toevoegen.
+  </footer>
+</main>
+
+<!-- Login modal -->
+<div class="modal" id="loginModal" style="display:none">
+  <div class="dialog">
+    <h3 style="margin:0 0 6px 0">Inloggen</h3>
+    <p class="muted" style="margin:0 0 8px 0">Log in met e‑mail en wachtwoord.</p>
+    <input id="emailInput" type="email" placeholder="jij@example.com" style="margin-bottom:8px" />
+    <input id="passInput" type="password" placeholder="Wachtwoord" />
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="btn" id="cancelLogin">Annuleren</button>
+      <button class="btn primary" id="confirmLogin">Inloggen</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // =============================
+  // 🔧 Firebase config (ingevuld)
+  // =============================
+  const firebaseConfig = {
+    apiKey: "AIzaSyAZs05CBBIUV62NH_qszk3jT6psx7IT6eo",
+    authDomain: "foxholerares.firebaseapp.com",
+    projectId: "foxholerares",
+    storageBucket: "foxholerares.firebasestorage.app",
+    messagingSenderId: "533071656893",
+    appId: "1:533071656893:web:d9d175656137f6456ec4d4",
+    measurementId: "G-HDERKBWXGC",
+  };
+
+  // Firebase SDK (v10)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+  import {
+    getFirestore, collection, doc, getDoc, setDoc, updateDoc, addDoc,
+    onSnapshot, query, orderBy, serverTimestamp, increment, limit
+  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+
+  // UI refs
+  const tabs = document.getElementById('tabs');
+  const boardLabel = document.getElementById('boardLabel');
+  const nameHeader = document.getElementById('nameHeader');
+  const tbody = document.getElementById('tbody');
+  const countLabel = document.getElementById('countLabel');
+  const top3 = document.getElementById('top3');
+  const adminPill = document.getElementById('adminPill');
+  const adminForm = document.getElementById('adminForm');
+  const form = document.getElementById('form');
+  const nameInput = document.getElementById('nameInput');
+  const amountInput = document.getElementById('amountInput');
+  const giverInput = document.getElementById('giverInput');
+  const whereInput = document.getElementById('whereInput');
+  const msg = document.getElementById('msg');
+
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const loginModal = document.getElementById('loginModal');
+  const emailInput = document.getElementById('emailInput');
+  const passInput = document.getElementById('passInput');
+  const cancelLogin = document.getElementById('cancelLogin');
+  const confirmLogin = document.getElementById('confirmLogin');
+
+  const BOARDS = ['individuen','regimenten'];
+  let board = 'individuen';
+  let isAdmin = false;
+  let currentUser = null;
+
+  // ===== Helpers =====
+  function slugify(s){ return (s||'').trim().toLowerCase().replace(/\s+/g,'_'); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+  function formatTS(ts){
+    try{
+      if (!ts) return '–';
+      if (ts.toDate) return ts.toDate().toLocaleString();
+      return new Date(ts.seconds*1000).toLocaleString();
+    }catch{ return '–'; }
+  }
+  function updateFormRequirements(){
+    if (board === 'individuen') {
+      giverInput.required = true;            // donateur verplicht
+      nameInput.required = false;            // doel optioneel
+      nameInput.placeholder = 'Naam (optioneel)';
+      nameHeader.textContent = 'Donateur';
+    } else {
+      giverInput.required = false;           // donateur optioneel
+      nameInput.required = true;             // doel (regiment) verplicht
+      nameInput.placeholder = 'Naam (regiment)';
+      nameHeader.textContent = 'Regiment';
+    }
+  }
+
+  updateFormRequirements();
+
+  // ===== Tabs switching =====
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    board = btn.dataset.board;
+    boardLabel.textContent = board === 'individuen' ? 'Individuen' : 'Regimenten';
+    updateFormRequirements();
+    subscribeBoard();
+  });
+
+  // ===== Auth UI =====
+  loginBtn.addEventListener('click', () => { loginModal.style.display = 'flex'; setTimeout(() => emailInput.focus(), 0); });
+  cancelLogin.addEventListener('click', () => loginModal.style.display = 'none');
+  confirmLogin.addEventListener('click', async () => {
+    try {
+      const email = emailInput.value.trim();
+      const pass = passInput.value;
+      await signInWithEmailAndPassword(auth, email, pass);
+      loginModal.style.display = 'none';
+    } catch (err) {
+      alert(err.message || 'Login mislukt');
+    }
+  });
+  logoutBtn.addEventListener('click', async () => { await signOut(auth); });
+
+  onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    if (user) {
+      // admin via claim of allowlist
+      let hasClaim = false;
+      try {
+        const token = await user.getIdTokenResult(true);
+        hasClaim = !!token.claims.admin;
+      } catch {}
+      let allowlisted = false;
+      try {
+        const adminsDoc = await getDoc(doc(db, 'meta','admins'));
+        if (adminsDoc.exists() && user.email) {
+          const emailsMap = adminsDoc.data().emails || {};
+          allowlisted = !!emailsMap[user.email];
+        }
+      } catch {}
+      isAdmin = hasClaim || allowlisted;
+    } else {
+      isAdmin = false;
+    }
+    updateAdminUI();
+  });
+
+  function updateAdminUI(){
+    adminForm.style.display = isAdmin ? 'block' : 'none';
+    adminPill.style.display = isAdmin ? 'inline-flex' : 'none';
+    loginBtn.style.display = currentUser ? 'none' : 'inline-flex';
+    logoutBtn.style.display = currentUser ? 'inline-flex' : 'none';
+  }
+
+  // ===== Live leaderboard subscription =====
+  let unsubscribe = null;
+  function subscribeBoard(){
+    if (unsubscribe) unsubscribe();
+    const q = query(collection(db, board), orderBy('rares','desc'));
+    unsubscribe = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderTable(rows);
+      renderTop3(rows.slice(0,3));
+    });
+  }
+  subscribeBoard();
+
+  function renderTop3(items){
+    top3.innerHTML = '';
+    items.forEach((row, i) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="rank">#${i+1}</div>
+        <div class="name">${escapeHtml(row.name || '-') }</div>
+        <div class="score">${Number(row.rares || 0)}</div>
+      `;
+      top3.appendChild(card);
+    });
+  }
+
+  function renderTable(items){
+    tbody.innerHTML = '';
+    items.forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx+1}</td>
+        <td>${escapeHtml(row.name || '-')}</td>
+        <td>${Number(row.rares || 0)}</td>
+        <td>${formatTS(row.updatedAt)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    countLabel.textContent = `${items.length} ${items.length === 1 ? 'entry' : 'entries'}`;
+  }
+
+  // ===== Submit contribution =====
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!isAdmin) { msg.textContent = 'Niet toegestaan: je bent geen admin.'; return; }
+
+    const name = nameInput.value.trim();    // ontvanger/doel
+    const amount = parseInt(amountInput.value, 10);
+    const donor = giverInput.value.trim();  // donateur (veld heet nog 'giver' in DB voor compatibiliteit)
+    const where = whereInput.value.trim();
+
+    if (!amount || amount < 1) { msg.textContent = 'Vul een geldige hoeveelheid in.'; return; }
+    if (board === 'individuen' && !donor) { msg.textContent = 'Vul de donateur in.'; return; }
+    if (board === 'regimenten' && !name)  { msg.textContent = 'Vul de naam van het regiment in.'; return; }
+
+    msg.textContent = 'Bezig...';
+
+    // Individuen → donateur telt; Regimenten → doel telt
+    const displayName = board === 'individuen' ? donor : name;
+    const id = slugify(displayName);
+
+    const ref = doc(db, board, id);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, { name: displayName, rares: increment(amount), updatedAt: serverTimestamp() });
+    } else {
+      await setDoc(ref, { name: displayName, rares: amount, updatedAt: serverTimestamp() });
+    }
+
+    // Log transactie
+    await addDoc(collection(db, 'logs'), {
+      ts: serverTimestamp(),
+      board,
+      target: name || null,   // ontvanger mag leeg zijn bij individuen
+      amount,
+      giver: donor || null,   // DB-veld blijft 'giver' voor backwards compat
+      where: where || null,
+      uid: currentUser ? currentUser.uid : null,
+      email: currentUser ? currentUser.email : null,
+    });
+
+    msg.textContent = `Toegevoegd: +${amount} rares → ${displayName}`;
+    form.reset();
+    amountInput.value = '';
+  });
+
+  // ===== Live logs (laatste 10) =====
+  const logBody = document.getElementById('logBody');
+  const logCount = document.getElementById('logCount');
+  onSnapshot(query(collection(db,'logs'), orderBy('ts','desc'), limit(10)), (snap) => {
+    const rows = snap.docs.map(d => d.data());
+    logBody.innerHTML = '';
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatTS(r.ts)}</td>
+        <td>${r.board}</td>
+        <td>${escapeHtml(r.target || '-')}</td>
+        <td>+${Number(r.amount||0)}</td>
+        <td>${escapeHtml(r.giver || '–')}</td>
+        <td>${escapeHtml(r.where || '–')}</td>
+      `;
+      logBody.appendChild(tr);
+    });
+    logCount.textContent = `${rows.length} items`;
+  });
+</script>
+</body>
+</html>
